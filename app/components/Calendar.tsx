@@ -1,8 +1,10 @@
 import { useEffect, useState, useMemo } from 'react';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
+import interactionPlugin from '@fullcalendar/interaction';
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
+import type { DateClickArg } from '@fullcalendar/interaction';
 
 // 担当者編集用モーダル
 function EditDutyModal({
@@ -98,7 +100,7 @@ export default function Calendar({ dutyHistory, people, onChangeDuty, onDeleteDu
   }, [dutyHistory, people]);
 
   // 日付クリック時の処理
-  const handleDateClick = (arg: any) => {
+  const handleDateClick = (arg: DateClickArg) => {
     setSelectedDate(arg.dateStr);
     const found = dutyHistory.find(r => r.date === arg.dateStr);
     setSelectedPersonId(found?.personId);
@@ -120,7 +122,7 @@ export default function Calendar({ dutyHistory, people, onChangeDuty, onDeleteDu
     <div className="bg-white rounded-lg shadow-lg p-4">
       <h2 className="text-lg font-semibold mb-4">当番カレンダー</h2>
       <FullCalendar
-        plugins={[dayGridPlugin]}
+        plugins={[dayGridPlugin, interactionPlugin]}
         initialView="dayGridMonth"
         locale={ja}
         events={events}
@@ -136,7 +138,7 @@ export default function Calendar({ dutyHistory, people, onChangeDuty, onDeleteDu
           minute: '2-digit',
           meridiem: false
         }}
-        dateClick={handleDateClick as any}
+        dateClick={handleDateClick}
       />
       <EditDutyModal
         open={modalOpen}
