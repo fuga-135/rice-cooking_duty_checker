@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { format, addDays, isWithinInterval, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { db } from './firebase';
-import { collection, doc, setDoc, getDoc, onSnapshot, query, limit, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, setDoc, getDoc, onSnapshot, query, limit, serverTimestamp, updateDoc } from 'firebase/firestore';
 import Calendar from './components/Calendar';
 import { useRouter } from 'next/navigation';
 import { Person, DutyHistory } from './types';
@@ -31,9 +31,9 @@ type SharedData = {
 
 const initialData: SharedData = {
   people: [
-    { id: '1', name: '' },
-    { id: '2', name: '' },
-    { id: '3', name: '' },
+    { id: '1', name: 'あきは' },
+    { id: '2', name: 'ことは' },
+    { id: '3', name: 'わたる' }
   ],
   currentDuty: '1',
   dutyHistory: [],
@@ -45,7 +45,11 @@ const SHARED_DOC_ID = 'shared_data';
 
 export default function Home() {
   const router = useRouter();
-  const [people, setPeople] = useState<Person[]>([]);
+  const [people, setPeople] = useState<Person[]>([
+    { id: '1', name: 'あきは' },
+    { id: '2', name: 'ことは' },
+    { id: '3', name: 'わたる' }
+  ]);
   const [dutyHistory, setDutyHistory] = useState<DutyHistory[]>([]);
   const [currentDuty, setCurrentDuty] = useState<Person | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -86,30 +90,30 @@ export default function Home() {
   }, []);
 
   // データの更新
-  const updateSharedData = useCallback(async (newData: any) => {
+  const updateSharedData = async (updates: Partial<SharedData>) => {
     try {
-      const dataToUpdate = {
-        ...newData,
-        lastUpdated: serverTimestamp()
-      };
-
-      // 現在のデータを取得
       const docRef = doc(db, 'shared_data', SHARED_DOC_ID);
       const docSnap = await getDoc(docRef);
       
       if (!docSnap.exists()) {
-        throw new Error('データが存在しません');
+        // ドキュメントが存在しない場合は初期データを作成
+        await setDoc(docRef, {
+          ...createInitialData(),
+          ...updates,
+          lastUpdated: serverTimestamp()
+        });
+      } else {
+        // 既存のドキュメントを更新
+        await updateDoc(docRef, {
+          ...updates,
+          lastUpdated: serverTimestamp()
+        });
       }
-
-      // 更新を実行
-      await setDoc(docRef, dataToUpdate, { merge: true });
-      setError(null);
-    } catch (err) {
-      console.error('データの更新に失敗しました:', err);
-      setError('データの更新に失敗しました。もう一度お試しください。');
-      throw err;
+    } catch (error) {
+      console.error('データの更新に失敗しました:', error);
+      throw new Error('データの更新に失敗しました。もう一度お試しください。');
     }
-  }, []);
+  };
 
   // データの監視
   useEffect(() => {
