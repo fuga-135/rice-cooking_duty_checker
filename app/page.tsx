@@ -46,12 +46,20 @@ const initialData: SharedData = {
 export default function Home() {
   const [sharedData, setSharedData] = useState<SharedData>(initialData);
   const [isLoading, setIsLoading] = useState(true);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   const [showAbsenceForm, setShowAbsenceForm] = useState(false);
   const [selectedPerson, setSelectedPerson] = useState<number>(1);
   const [absenceStartDate, setAbsenceStartDate] = useState('');
   const [absenceEndDate, setAbsenceEndDate] = useState('');
   const [absenceReason, setAbsenceReason] = useState('');
+
+  useEffect(() => {
+    const saved = localStorage.getItem('isInitialized');
+    if (saved) {
+      setIsInitialized(JSON.parse(saved));
+    }
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(doc(db, 'duty', 'shared'), (doc) => {
