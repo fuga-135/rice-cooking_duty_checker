@@ -1,8 +1,8 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin from '@fullcalendar/interaction';
-import { format } from 'date-fns';
+import { format, addDays } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import type { DateClickArg } from '@fullcalendar/interaction';
 import { Person, DutyHistory } from '../types';
@@ -76,9 +76,29 @@ const colors = [
 ];
 
 export default function Calendar({ people, dutyHistory, currentDuty, onUpdateDuty }: CalendarProps) {
-  const [modalOpen, setModalOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string>('');
-  const [selectedPersonId, setSelectedPersonId] = useState<number | undefined>(undefined);
+  const [showDutyModal, setShowDutyModal] = useState(false);
+
+  // 次の当番予想を計算
+  const nextDutyPredictions = useMemo(() => {
+    if (!currentDuty || people.length === 0) return [];
+    
+    const predictions = [];
+    const currentIndex = people.findIndex(p => p.id === currentDuty.id);
+    let nextIndex = currentIndex;
+    
+    for (let i = 0; i < 5; i++) {
+      nextIndex = (nextIndex + 1) % people.length;
+      const nextPerson = people[nextIndex];
+      const date = format(addDays(new Date(), i + 1), 'yyyy-MM-dd');
+      predictions.push({
+        date,
+        person: nextPerson
+      });
+    }
+    
+    return predictions;
+  }, [currentDuty, people]);
 
   const events = useMemo(() => {
     return dutyHistory.map(record => {
@@ -93,22 +113,23 @@ export default function Calendar({ people, dutyHistory, currentDuty, onUpdateDut
     });
   }, [dutyHistory, people, currentDuty]);
 
-  const handleDateClick = async (arg: any) => {
-    const date = arg.dateStr;
-    const currentIndex = people.findIndex(p => p.id === currentDuty?.id);
-    const nextIndex = (currentIndex + 1) % people.length;
-    const nextPerson = people[nextIndex];
+  const handleDateClick = (arg: DateClickArg) => {
+    setSelectedDate(arg.dateStr);
+    setShowDutyModal(true);
+  };
 
+  const handleDutySelect = async (personId: string) => {
     try {
       const newDutyHistory = [
-        { date, personId: nextPerson.id },
+        { date: selectedDate, personId },
         ...dutyHistory.slice(0, 9)
       ];
 
       await onUpdateDuty({
         dutyHistory: newDutyHistory,
-        currentDuty: nextPerson
+        currentDuty: people.find(p => p.id === personId)
       });
+      setShowDutyModal(false);
     } catch (error) {
       console.error('当番の更新に失敗しました:', error);
       alert('当番の更新に失敗しました。もう一度お試しください。');
@@ -116,27 +137,70 @@ export default function Calendar({ people, dutyHistory, currentDuty, onUpdateDut
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-lg p-4">
-      <h2 className="text-lg font-semibold mb-4">当番カレンダー</h2>
-      <FullCalendar
-        plugins={[dayGridPlugin, interactionPlugin]}
-        initialView="dayGridMonth"
-        locale={ja}
-        events={events}
-        headerToolbar={{
-          left: 'prev,next today',
-          center: 'title',
-          right: 'dayGridMonth'
-        }}
-        height="auto"
-        lazyFetching={true}
-        eventTimeFormat={{
-          hour: '2-digit',
-          minute: '2-digit',
-          meridiem: false
-        }}
-        dateClick={handleDateClick}
-      />
+    <div className="space-y-6">
+      <div className="bg-white rounded-lg shadow-lg p-4">
+        <h2 className="text-lg font-semibold mb-4">当番カレンダー</h2>
+        <FullCalendar
+          plugins={[dayGridPlugin, interactionPlugin]}
+          initialView="dayGridMonth"
+          locale={ja}
+          events={events}
+          headerToolbar={{
+            left: 'prev,next today',
+            center: 'title',
+            right: 'dayGridMonth'
+          }}
+          height="auto"
+          lazyFetching={true}
+          eventTimeFormat={{
+            hour: '2-digit',
+            minute: '2-digit',
+            meridiem: false
+          }}
+          dateClick={handleDateClick}
+        />
+      </div>
+
+      {/* 次の当番予想 */}
+      <div className="bg-white rounded-lg shadow-lg p-4">
+        <h2 className="text-lg font-semibold mb-4">次の当番予想</h2>
+        <div className="space-y-2">
+          {nextDutyPredictions.map((prediction, index) => (
+            <div key={prediction.date} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+              <span className="text-gray-600">{format(new Date(prediction.date), 'M月d日')}</span>
+              <span className="font-medium">{prediction.person.name}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 当番選択モーダル */}
+      {showDutyModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg p-6 min-w-[300px]">
+            <h3 className="text-lg font-bold mb-4">
+              {format(new Date(selectedDate), 'yyyy年M月d日')} の当番
+            </h3>
+            <div className="space-y-2">
+              {people.map(person => (
+                <button
+                  key={person.id}
+                  onClick={() => handleDutySelect(person.id)}
+                  className="w-full p-2 text-left hover:bg-gray-100 rounded"
+                >
+                  {person.name}
+                </button>
+              ))}
+            </div>
+            <button
+              className="mt-4 w-full text-gray-500"
+              onClick={() => setShowDutyModal(false)}
+            >
+              キャンセル
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 } 
