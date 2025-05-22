@@ -11,11 +11,11 @@ import { Person, DutyHistory } from './types';
 
 type DutyRecord = {
   date: string;
-  personId: number;
+  personId: string;
 };
 
 type Absence = {
-  personId: number;
+  personId: string;
   startDate: string;
   endDate: string;
   reason: string;
@@ -23,7 +23,7 @@ type Absence = {
 
 type SharedData = {
   people: Person[];
-  currentDuty: number;
+  currentDuty: string;
   dutyHistory: DutyRecord[];
   absences: Absence[];
   isInitialized: boolean;
@@ -31,11 +31,11 @@ type SharedData = {
 
 const initialData: SharedData = {
   people: [
-    { id: 1, name: '' },
-    { id: 2, name: '' },
-    { id: 3, name: '' },
+    { id: '1', name: '' },
+    { id: '2', name: '' },
+    { id: '3', name: '' },
   ],
-  currentDuty: 1,
+  currentDuty: '1',
   dutyHistory: [],
   absences: [],
   isInitialized: false,
@@ -53,7 +53,7 @@ export default function Home() {
   const [isInitialized, setIsInitialized] = useState(false);
 
   const [showAbsenceForm, setShowAbsenceForm] = useState(false);
-  const [selectedPerson, setSelectedPerson] = useState<number>(1);
+  const [selectedPerson, setSelectedPerson] = useState<string>('1');
   const [absenceStartDate, setAbsenceStartDate] = useState('');
   const [absenceEndDate, setAbsenceEndDate] = useState('');
   const [absenceReason, setAbsenceReason] = useState('');
@@ -133,12 +133,12 @@ export default function Home() {
   const memoizedDutyHistory = useMemo(() => dutyHistory, [dutyHistory]);
   const memoizedCurrentDuty = useMemo(() => currentDuty, [currentDuty]);
 
-  const handleNameChange = useCallback(async (id: number, name: string) => {
+  const handleNameChange = useCallback(async (id: string, name: string) => {
     const newPeople = people.map(p => p.id === id ? { ...p, name } : p);
     await updateSharedData({ people: newPeople });
   }, [people, updateSharedData]);
 
-  const isPersonAbsent = useCallback((personId: number) => {
+  const isPersonAbsent = useCallback((personId: string) => {
     const today = new Date();
     return people.some(person => 
       person.id === personId &&
@@ -196,16 +196,16 @@ export default function Home() {
   }, [absenceStartDate, absenceEndDate, absenceReason, selectedPerson, people, updateSharedData]);
 
   const handleRemoveAbsence = useCallback(async (index: number) => {
-    const newAbsences = people.find(p => p.id === selectedPerson)?.absences?.filter((_, i) => i !== index) || [];
+    const newAbsences = people.find(p => p.id === selectedPerson)?.absences?.filter((_: any, i: number) => i !== index) || [];
     await updateSharedData({
       people: people.map(p => p.id === selectedPerson ? { ...p, absences: newAbsences } : p),
     });
   }, [selectedPerson, people, updateSharedData]);
 
-  const getAbsenceInfo = useCallback((personId: number) => {
+  const getAbsenceInfo = useCallback((personId: string) => {
     const person = people.find(p => p.id === personId);
     if (!person) return null;
-    const absence = person.absences?.find(a => a.personId === personId);
+    const absence = person.absences?.find((a: Absence) => a.personId === personId);
     if (!absence) return null;
     return {
       startDate: format(new Date(absence.startDate), 'M月d日', { locale: ja }),
@@ -214,7 +214,7 @@ export default function Home() {
     };
   }, [people]);
 
-  const handleChangeDuty = useCallback(async (date: string, personId: number) => {
+  const handleChangeDuty = useCallback(async (date: string, personId: string) => {
     try {
       const filtered = dutyHistory.filter(r => r.date !== date);
       const newHistory = [
