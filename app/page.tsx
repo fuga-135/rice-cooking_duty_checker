@@ -70,10 +70,12 @@ export default function Home() {
           { id: '5', name: 'Eさん' }
         ],
         dutyHistory: [],
+        currentDuty: null,
         lastUpdated: serverTimestamp()
       };
 
-      await setDoc(doc(db, 'shared_data', SHARED_DOC_ID), initialData);
+      const docRef = doc(db, 'shared_data', SHARED_DOC_ID);
+      await setDoc(docRef, initialData);
       setIsInitialized(true);
       setError(null);
     } catch (err) {
@@ -90,7 +92,17 @@ export default function Home() {
         ...newData,
         lastUpdated: serverTimestamp()
       };
-      await setDoc(doc(db, 'shared_data', SHARED_DOC_ID), dataToUpdate);
+
+      // 現在のデータを取得
+      const docRef = doc(db, 'shared_data', SHARED_DOC_ID);
+      const docSnap = await getDoc(docRef);
+      
+      if (!docSnap.exists()) {
+        throw new Error('データが存在しません');
+      }
+
+      // 更新を実行
+      await setDoc(docRef, dataToUpdate, { merge: true });
       setError(null);
     } catch (err) {
       console.error('データの更新に失敗しました:', err);
@@ -101,31 +113,45 @@ export default function Home() {
 
   // データの監視
   useEffect(() => {
+    let isMounted = true;
     setIsLoading(true);
     setError(null);
 
     const unsubscribe = onSnapshot(
       doc(db, 'shared_data', SHARED_DOC_ID),
       (docSnapshot) => {
-        if (docSnapshot.exists()) {
-          const data = docSnapshot.data();
-          setPeople(data.people || []);
-          setDutyHistory(data.dutyHistory || []);
-          setCurrentDuty(data.currentDuty || null);
-          setIsInitialized(true);
-        } else {
-          createInitialData();
+        if (!isMounted) return;
+
+        try {
+          if (docSnapshot.exists()) {
+            const data = docSnapshot.data();
+            setPeople(data.people || []);
+            setDutyHistory(data.dutyHistory || []);
+            setCurrentDuty(data.currentDuty || null);
+            setIsInitialized(true);
+          } else {
+            createInitialData();
+          }
+          setError(null);
+        } catch (err) {
+          console.error('データの処理中にエラーが発生しました:', err);
+          setError('データの読み込みに失敗しました。もう一度お試しください。');
+        } finally {
+          setIsLoading(false);
         }
-        setIsLoading(false);
       },
       (err) => {
+        if (!isMounted) return;
         console.error('データの監視中にエラーが発生しました:', err);
         setError('データの読み込みに失敗しました。もう一度お試しください。');
         setIsLoading(false);
       }
     );
 
-    return () => unsubscribe();
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, [createInitialData]);
 
   // メモ化された値と関数
