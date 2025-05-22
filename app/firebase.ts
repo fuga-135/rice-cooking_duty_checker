@@ -16,8 +16,7 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0
 // Initialize Firestore with optimized settings
 const db = initializeFirestore(app, {
   cacheSizeBytes: CACHE_SIZE_UNLIMITED,
-  experimentalForceLongPolling: true,
-  experimentalAutoDetectLongPolling: true
+  experimentalForceLongPolling: true
 });
 
 // Enable offline persistence with optimized settings
