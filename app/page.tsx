@@ -6,11 +6,8 @@ import { ja } from 'date-fns/locale';
 import { db } from './firebase';
 import { collection, doc, setDoc, getDoc, onSnapshot, query, limit, serverTimestamp } from 'firebase/firestore';
 import Calendar from './components/Calendar';
-
-type Person = {
-  id: number;
-  name: string;
-};
+import { useRouter } from 'next/navigation';
+import { Person, DutyHistory } from './types';
 
 type DutyRecord = {
   date: string;
@@ -44,11 +41,15 @@ const initialData: SharedData = {
   isInitialized: false,
 };
 
-const SHARED_DOC_ID = 'shared';
+const SHARED_DOC_ID = 'shared_data';
 
 export default function Home() {
-  const [sharedData, setSharedData] = useState<SharedData>(initialData);
+  const router = useRouter();
+  const [people, setPeople] = useState<Person[]>([]);
+  const [dutyHistory, setDutyHistory] = useState<DutyHistory[]>([]);
+  const [currentDuty, setCurrentDuty] = useState<Person | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
 
   const [showAbsenceForm, setShowAbsenceForm] = useState(false);
@@ -57,126 +58,105 @@ export default function Home() {
   const [absenceEndDate, setAbsenceEndDate] = useState('');
   const [absenceReason, setAbsenceReason] = useState('');
 
-  useEffect(() => {
-    const docRef = doc(db, 'duty', SHARED_DOC_ID);
-    let initialLoad = true;
+  // 初期データの作成
+  const createInitialData = useCallback(async () => {
+    try {
+      const initialData = {
+        people: [
+          { id: '1', name: 'Aさん' },
+          { id: '2', name: 'Bさん' },
+          { id: '3', name: 'Cさん' },
+          { id: '4', name: 'Dさん' },
+          { id: '5', name: 'Eさん' }
+        ],
+        dutyHistory: [],
+        lastUpdated: serverTimestamp()
+      };
 
-    const createInitialData = async () => {
-      try {
-        const initialDataWithTimestamp = {
-          ...initialData,
-          lastUpdated: serverTimestamp()
-        };
-        await setDoc(docRef, initialDataWithTimestamp);
-        setSharedData(initialData);
-        setIsInitialized(false);
-      } catch (error) {
-        console.error("Error creating initial data:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    const unsubscribe = onSnapshot(docRef, (doc) => {
-      if (doc.exists()) {
-        const data = doc.data() as SharedData;
-        const parsedData = {
-          ...data,
-          dutyHistory: data.dutyHistory.map(record => ({
-            ...record,
-            date: format(parseISO(record.date), 'yyyy-MM-dd')
-          })),
-          absences: data.absences.map(absence => ({
-            ...absence,
-            startDate: format(parseISO(absence.startDate), 'yyyy-MM-dd'),
-            endDate: format(parseISO(absence.endDate), 'yyyy-MM-dd')
-          }))
-        };
-        setSharedData(parsedData);
-        setIsInitialized(parsedData.isInitialized);
-        setIsLoading(false);
-      } else if (initialLoad) {
-        createInitialData();
-      }
-      initialLoad = false;
-    }, (error) => {
-      console.error("Error in real-time update:", error);
-      setIsLoading(false);
-    });
-
-    return () => unsubscribe();
+      await setDoc(doc(db, 'shared_data', SHARED_DOC_ID), initialData);
+      setIsInitialized(true);
+      setError(null);
+    } catch (err) {
+      console.error('初期データの作成に失敗しました:', err);
+      setError('初期データの作成に失敗しました。もう一度お試しください。');
+      setIsInitialized(false);
+    }
   }, []);
 
-  const updateSharedData = useCallback(async (newData: Partial<SharedData>) => {
+  // データの更新
+  const updateSharedData = useCallback(async (newData: any) => {
     try {
-      const docRef = doc(db, 'duty', SHARED_DOC_ID);
-      const currentData = { 
-        ...sharedData, 
+      const dataToUpdate = {
         ...newData,
         lastUpdated: serverTimestamp()
       };
-      
-      if (currentData.dutyHistory) {
-        currentData.dutyHistory = currentData.dutyHistory.slice(0, 10);
+      await setDoc(doc(db, 'shared_data', SHARED_DOC_ID), dataToUpdate);
+      setError(null);
+    } catch (err) {
+      console.error('データの更新に失敗しました:', err);
+      setError('データの更新に失敗しました。もう一度お試しください。');
+      throw err;
+    }
+  }, []);
+
+  // データの監視
+  useEffect(() => {
+    setIsLoading(true);
+    setError(null);
+
+    const unsubscribe = onSnapshot(
+      doc(db, 'shared_data', SHARED_DOC_ID),
+      (docSnapshot) => {
+        if (docSnapshot.exists()) {
+          const data = docSnapshot.data();
+          setPeople(data.people || []);
+          setDutyHistory(data.dutyHistory || []);
+          setCurrentDuty(data.currentDuty || null);
+          setIsInitialized(true);
+        } else {
+          createInitialData();
+        }
+        setIsLoading(false);
+      },
+      (err) => {
+        console.error('データの監視中にエラーが発生しました:', err);
+        setError('データの読み込みに失敗しました。もう一度お試しください。');
+        setIsLoading(false);
       }
-      
-      await setDoc(docRef, currentData);
-    } catch (error) {
-      console.error("Error updating data:", error);
-      alert('データの更新に失敗しました。もう一度お試しください。');
-    }
-  }, [sharedData]);
+    );
 
-  const handleInitialSetup = useCallback(async () => {
-    if (sharedData.people.some(p => !p.name.trim())) {
-      alert('全員の名前を入力してください。');
-      return;
-    }
+    return () => unsubscribe();
+  }, [createInitialData]);
 
-    try {
-      const today = format(new Date(), 'yyyy-MM-dd');
-      const initialDutyHistory = [{
-        date: today,
-        personId: 1
-      }];
-
-      await updateSharedData({ 
-        isInitialized: true,
-        people: sharedData.people,
-        currentDuty: 1,
-        dutyHistory: initialDutyHistory,
-        absences: []
-      });
-    } catch (error) {
-      console.error("Error in initial setup:", error);
-      alert('初期設定に失敗しました。もう一度お試しください。');
-    }
-  }, [sharedData.people, updateSharedData]);
+  // メモ化された値と関数
+  const memoizedPeople = useMemo(() => people, [people]);
+  const memoizedDutyHistory = useMemo(() => dutyHistory, [dutyHistory]);
+  const memoizedCurrentDuty = useMemo(() => currentDuty, [currentDuty]);
 
   const handleNameChange = useCallback(async (id: number, name: string) => {
-    const newPeople = sharedData.people.map(p => p.id === id ? { ...p, name } : p);
+    const newPeople = people.map(p => p.id === id ? { ...p, name } : p);
     await updateSharedData({ people: newPeople });
-  }, [sharedData.people, updateSharedData]);
+  }, [people, updateSharedData]);
 
   const isPersonAbsent = useCallback((personId: number) => {
     const today = new Date();
-    return sharedData.absences.some(absence => 
-      absence.personId === personId &&
+    return people.some(person => 
+      person.id === personId &&
       isWithinInterval(today, {
-        start: new Date(absence.startDate),
-        end: new Date(absence.endDate)
+        start: new Date(people.find(p => p.id === personId)?.startDate || ''),
+        end: new Date(people.find(p => p.id === personId)?.endDate || '')
       })
     );
-  }, [sharedData.absences]);
+  }, [people]);
 
   const handleNextDuty = useCallback(async () => {
-    const currentIndex = sharedData.people.findIndex(p => p.id === sharedData.currentDuty);
-    let nextIndex = (currentIndex + 1) % sharedData.people.length;
-    let nextPersonId = sharedData.people[nextIndex].id;
+    const currentIndex = people.findIndex(p => p.id === currentDuty?.id);
+    let nextIndex = (currentIndex + 1) % people.length;
+    let nextPersonId = people[nextIndex].id;
     
     while (isPersonAbsent(nextPersonId)) {
-      nextIndex = (nextIndex + 1) % sharedData.people.length;
-      nextPersonId = sharedData.people[nextIndex].id;
+      nextIndex = (nextIndex + 1) % people.length;
+      nextPersonId = people[nextIndex].id;
     }
     
     const today = format(new Date(), 'yyyy-MM-dd');
@@ -185,14 +165,14 @@ export default function Home() {
         date: today,
         personId: nextPersonId,
       },
-      ...sharedData.dutyHistory.slice(0, 9),
+      ...dutyHistory.slice(0, 9),
     ];
 
     await updateSharedData({
       currentDuty: nextPersonId,
       dutyHistory: newDutyHistory,
     });
-  }, [sharedData, isPersonAbsent, updateSharedData]);
+  }, [people, dutyHistory, currentDuty, isPersonAbsent, updateSharedData]);
 
   const handleAddAbsence = useCallback(async () => {
     if (!absenceStartDate || !absenceEndDate) return;
@@ -204,37 +184,39 @@ export default function Home() {
       reason: absenceReason,
     };
 
-    const newAbsences = [...sharedData.absences, newAbsence];
-    await updateSharedData({ absences: newAbsences });
+    const newAbsences = [...people.find(p => p.id === selectedPerson)?.absences || [], newAbsence];
+    await updateSharedData({
+      people: people.map(p => p.id === selectedPerson ? { ...p, absences: newAbsences } : p),
+    });
     
     setShowAbsenceForm(false);
     setAbsenceStartDate('');
     setAbsenceEndDate('');
     setAbsenceReason('');
-  }, [absenceStartDate, absenceEndDate, absenceReason, selectedPerson, sharedData.absences, updateSharedData]);
+  }, [absenceStartDate, absenceEndDate, absenceReason, selectedPerson, people, updateSharedData]);
 
   const handleRemoveAbsence = useCallback(async (index: number) => {
-    const newAbsences = sharedData.absences.filter((_, i) => i !== index);
-    await updateSharedData({ absences: newAbsences });
-  }, [sharedData.absences, updateSharedData]);
-
-  const currentPerson = useMemo(() => 
-    sharedData.people.find(p => p.id === sharedData.currentDuty)?.name || ''
-  , [sharedData.people, sharedData.currentDuty]);
+    const newAbsences = people.find(p => p.id === selectedPerson)?.absences?.filter((_, i) => i !== index) || [];
+    await updateSharedData({
+      people: people.map(p => p.id === selectedPerson ? { ...p, absences: newAbsences } : p),
+    });
+  }, [selectedPerson, people, updateSharedData]);
 
   const getAbsenceInfo = useCallback((personId: number) => {
-    const absence = sharedData.absences.find(a => a.personId === personId);
+    const person = people.find(p => p.id === personId);
+    if (!person) return null;
+    const absence = person.absences?.find(a => a.personId === personId);
     if (!absence) return null;
     return {
       startDate: format(new Date(absence.startDate), 'M月d日', { locale: ja }),
       endDate: format(new Date(absence.endDate), 'M月d日', { locale: ja }),
       reason: absence.reason,
     };
-  }, [sharedData.absences]);
+  }, [people]);
 
   const handleChangeDuty = useCallback(async (date: string, personId: number) => {
     try {
-      const filtered = sharedData.dutyHistory.filter(r => r.date !== date);
+      const filtered = dutyHistory.filter(r => r.date !== date);
       const newHistory = [
         { date, personId },
         ...filtered
@@ -243,72 +225,53 @@ export default function Home() {
     } catch (e) {
       alert('担当者の変更に失敗しました');
     }
-  }, [sharedData.dutyHistory, updateSharedData]);
+  }, [dutyHistory, updateSharedData]);
 
   const handleDeleteDuty = useCallback(async (date: string) => {
     try {
-      const newHistory = sharedData.dutyHistory.filter(r => r.date !== date);
+      const newHistory = dutyHistory.filter(r => r.date !== date);
       await updateSharedData({ dutyHistory: newHistory });
     } catch (e) {
       alert('担当履歴の削除に失敗しました');
     }
-  }, [sharedData.dutyHistory, updateSharedData]);
+  }, [dutyHistory, updateSharedData]);
 
   if (isLoading) {
     return (
-      <main className="min-h-screen p-4 bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
           <p className="mt-4 text-gray-600">読み込み中...</p>
         </div>
-      </main>
+      </div>
     );
   }
 
-  if (!sharedData.isInitialized) {
+  if (error) {
     return (
-      <main className="min-h-screen p-4 bg-gray-50">
-        <div className="max-w-md mx-auto">
-          <h1 className="text-2xl font-bold mb-6 text-center">初期設定</h1>
-          <div className="bg-white rounded-lg shadow-lg p-4">
-            <h2 className="text-lg font-semibold mb-4">担当者の名前を入力してください</h2>
-            <div className="space-y-4">
-              {sharedData.people.map(person => (
-                <div key={person.id}>
-                  <label className="block text-sm font-medium mb-1">
-                    {person.id}人目
-                  </label>
-                  <input
-                    type="text"
-                    value={person.name}
-                    onChange={(e) => handleNameChange(person.id, e.target.value)}
-                    placeholder="名前を入力"
-                    className="w-full p-3 border rounded text-lg"
-                  />
-                </div>
-              ))}
-              <button
-                onClick={handleInitialSetup}
-                className="w-full bg-blue-500 text-white py-3 px-4 rounded-lg text-lg font-medium hover:bg-blue-600 active:bg-blue-700 transition-colors"
-              >
-                設定を完了
-              </button>
-            </div>
-          </div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="text-center">
+          <p className="text-red-500 mb-4">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
+            再試行
+          </button>
         </div>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="min-h-screen p-4 bg-gray-50">
-      <div className="max-w-4xl mx-auto">
-        <h1 className="text-2xl font-bold mb-6 text-center">ご飯当番チェッカー</h1>
+    <main className="min-h-screen bg-gray-100 p-4">
+      <div className="max-w-7xl mx-auto">
+        <h1 className="text-3xl font-bold text-center mb-8">当番管理</h1>
         <Calendar
-          dutyHistory={sharedData.dutyHistory}
-          people={sharedData.people}
-          onChangeDuty={handleChangeDuty}
-          onDeleteDuty={handleDeleteDuty}
+          people={memoizedPeople}
+          dutyHistory={memoizedDutyHistory}
+          currentDuty={memoizedCurrentDuty}
+          onUpdateDuty={updateSharedData}
         />
       </div>
     </main>

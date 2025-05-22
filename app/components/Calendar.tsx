@@ -5,6 +5,7 @@ import interactionPlugin from '@fullcalendar/interaction';
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import type { DateClickArg } from '@fullcalendar/interaction';
+import { Person, DutyHistory } from '../types';
 
 // 担当者編集用モーダル
 function EditDutyModal({
@@ -59,18 +60,12 @@ function EditDutyModal({
   );
 }
 
-type CalendarProps = {
-  dutyHistory: Array<{
-    date: string;
-    personId: number;
-  }>;
-  people: Array<{
-    id: number;
-    name: string;
-  }>;
-  onChangeDuty: (date: string, personId: number) => void;
-  onDeleteDuty: (date: string) => void;
-};
+interface CalendarProps {
+  people: Person[];
+  dutyHistory: DutyHistory[];
+  currentDuty: Person | null;
+  onUpdateDuty: (newData: any) => Promise<void>;
+}
 
 const colors = [
   '#4F46E5', // indigo
@@ -80,42 +75,44 @@ const colors = [
   '#10B981', // emerald
 ];
 
-export default function Calendar({ dutyHistory, people, onChangeDuty, onDeleteDuty }: CalendarProps) {
+export default function Calendar({ people, dutyHistory, currentDuty, onUpdateDuty }: CalendarProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedPersonId, setSelectedPersonId] = useState<number | undefined>(undefined);
 
   const events = useMemo(() => {
-    return dutyHistory.map((record, index) => {
+    return dutyHistory.map(record => {
       const person = people.find(p => p.id === record.personId);
       return {
-        title: person ? person.name : '',
+        title: person ? `${person.name}の当番` : '未設定',
         date: record.date,
-        backgroundColor: colors[index % colors.length],
-        borderColor: '#fff',
-        textColor: '#fff',
-        extendedProps: { personId: record.personId }
+        backgroundColor: person?.id === currentDuty?.id ? '#4CAF50' : '#2196F3',
+        borderColor: person?.id === currentDuty?.id ? '#4CAF50' : '#2196F3',
+        textColor: '#ffffff'
       };
     });
-  }, [dutyHistory, people]);
+  }, [dutyHistory, people, currentDuty]);
 
-  // 日付クリック時の処理
-  const handleDateClick = (arg: DateClickArg) => {
-    setSelectedDate(arg.dateStr);
-    const found = dutyHistory.find(r => r.date === arg.dateStr);
-    setSelectedPersonId(found?.personId);
-    setModalOpen(true);
-  };
+  const handleDateClick = async (arg: any) => {
+    const date = arg.dateStr;
+    const currentIndex = people.findIndex(p => p.id === currentDuty?.id);
+    const nextIndex = (currentIndex + 1) % people.length;
+    const nextPerson = people[nextIndex];
 
-  // 担当者変更
-  const handleChange = (personId: number) => {
-    onChangeDuty(selectedDate, personId);
-    setModalOpen(false);
-  };
-  // 担当履歴削除
-  const handleDelete = () => {
-    onDeleteDuty(selectedDate);
-    setModalOpen(false);
+    try {
+      const newDutyHistory = [
+        { date, personId: nextPerson.id },
+        ...dutyHistory.slice(0, 9)
+      ];
+
+      await onUpdateDuty({
+        dutyHistory: newDutyHistory,
+        currentDuty: nextPerson
+      });
+    } catch (error) {
+      console.error('当番の更新に失敗しました:', error);
+      alert('当番の更新に失敗しました。もう一度お試しください。');
+    }
   };
 
   return (
@@ -139,15 +136,6 @@ export default function Calendar({ dutyHistory, people, onChangeDuty, onDeleteDu
           meridiem: false
         }}
         dateClick={handleDateClick}
-      />
-      <EditDutyModal
-        open={modalOpen}
-        date={selectedDate}
-        people={people}
-        selectedPersonId={selectedPersonId}
-        onChange={handleChange}
-        onDelete={handleDelete}
-        onClose={() => setModalOpen(false)}
       />
     </div>
   );
